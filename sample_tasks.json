@@ -1,0 +1,104 @@
+{
+  "resource_budget": 15,
+  "tasks": [
+    {
+      "id": "requirements",
+      "name": "Gather Requirements",
+      "deadline": 1,
+      "profit": 40.0,
+      "resource_cost": 2,
+      "dependencies": []
+    },
+    {
+      "id": "design",
+      "name": "System Design",
+      "deadline": 2,
+      "profit": 70.0,
+      "resource_cost": 3,
+      "dependencies": ["requirements"]
+    },
+    {
+      "id": "backend",
+      "name": "Build Backend",
+      "deadline": 4,
+      "profit": 120.0,
+      "resource_cost": 5,
+      "dependencies": ["design"]
+    },
+    {
+      "id": "frontend",
+      "name": "Build Frontend",
+      "deadline": 4,
+      "profit": 90.0,
+      "resource_cost": 4,
+      "dependencies": ["design"]
+    },
+    {
+      "id": "integration_tests",
+      "name": "Integration Tests",
+      "deadline": 5,
+      "profit": 60.0,
+      "resource_cost": 3,
+      "dependencies": ["backend", "frontend"]
+    },
+    {
+      "id": "docs",
+      "name": "Write Documentation",
+      "deadline": 3,
+      "profit": 15.0,
+      "resource_cost": 1,
+      "dependencies": ["requirements"]
+    },
+    {
+      "id": "deploy",
+      "name": "Deploy to Production",
+      "deadline": 6,
+      "profit": 150.0,
+      "resource_cost": 6,
+      "dependencies": ["integration_tests"]
+    },
+    {
+      "id": "security_audit",
+      "name": "Security Audit",
+      "deadline": 5,
+      "profit": 55.0,
+      "resource_cost": 4,
+      "dependencies": ["backend"]
+    },
+    {
+      "id": "marketing_site",
+      "name": "Build Marketing Site",
+      "deadline": 3,
+      "profit": 25.0,
+      "resource_cost": 2,
+      "dependencies": []
+    },
+    {
+      "id": "load_testing",
+      "name": "Load Testing",
+      "deadline": 6,
+      "profit": 35.0,
+      "resource_cost": 3,
+      "dependencies": ["integration_tests"]
+    }
+  ],
+  "circular_dependency_demo": [
+    {
+      "id": "task_x",
+      "name": "Task X (circular demo, inert unless --demo-circular is passed)",
+      "deadline": 1,
+      "profit": 10.0,
+      "resource_cost": 1,
+      "dependencies": ["task_y"]
+    },
+    {
+      "id": "task_y",
+      "name": "Task Y (circular demo, inert unless --demo-circular is passed)",
+      "deadline": 1,
+      "profit": 10.0,
+      "resource_cost": 1,
+      "dependencies": ["task_x"]
+    }
+  ]
+}
+
