@@ -15,7 +15,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from scheduler import (
     CircularDependencyError,
@@ -97,7 +97,7 @@ def _task_from_dict(raw: dict) -> Task:
 
 def load_tasks_from_file(
     path: Path, use_circular_demo: bool = False
-) -> Tuple[List[Task], Optional[int]]:
+) -> tuple[list[Task], int | None]:
     """Load tasks (and an optional resource_budget) from a JSON file.
 
     Expected shape: ``{"resource_budget": <int>, "tasks": [ {...}, ... ]}``.
@@ -108,14 +108,19 @@ def load_tasks_from_file(
     Raises:
         ValueError: If the file is missing the requested task list.
         json.JSONDecodeError: If the file is not valid JSON.
+        KeyError: If a task is missing a required field.
     """
     with path.open("r", encoding="utf-8") as f:
         data: Any = json.load(f)
 
+    if not isinstance(data, dict):
+        raise ValueError(f"Input file {path} must contain a JSON object")
     key = "circular_dependency_demo" if use_circular_demo else "tasks"
     raw_tasks = data.get(key)
     if raw_tasks is None:
         raise ValueError(f"Input file {path} has no {key!r} key")
+    if not isinstance(raw_tasks, list) or not all(isinstance(raw, dict) for raw in raw_tasks):
+        raise ValueError(f"{key!r} in {path} must be a list of task objects")
 
     tasks = [_task_from_dict(raw) for raw in raw_tasks]
     budget = data.get("resource_budget")
@@ -150,7 +155,7 @@ def print_verbose_stages(result: EngineResult, budget: int) -> None:
     print(f"  Final total profit: {result.total_profit}")
 
 
-def print_results_table(tasks: List[Task], result: EngineResult) -> None:
+def print_results_table(tasks: list[Task], result: EngineResult) -> None:
     selected_ids = {t.id for t in result.final_selected}
     order_index = {task_id: i for i, task_id in enumerate(result.topological_order)}
     rows = sorted(tasks, key=lambda t: order_index.get(t.id, len(order_index)))
@@ -172,7 +177,7 @@ def print_results_table(tasks: List[Task], result: EngineResult) -> None:
         for col in range(len(headers))
     ]
 
-    def format_row(cells: List[str]) -> str:
+    def format_row(cells: list[str]) -> str:
         return "  ".join(cell.ljust(width) for cell, width in zip(cells, widths))
 
     print()
@@ -248,7 +253,7 @@ def main() -> None:
         print("Done.")
         return
 
-    file_budget: Optional[int] = None
+    file_budget: int | None = None
     if args.input is not None:
         try:
             tasks, file_budget = load_tasks_from_file(args.input)
