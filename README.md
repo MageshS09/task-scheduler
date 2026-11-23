@@ -6,6 +6,22 @@ traversal**, and **heaps** — composed into a single, coherent scheduling
 pipeline. Built as an interview portfolio project (Infosys Specialist
 Programmer / Digital Specialist Engineer).
 
+## Table of Contents
+
+- [Problem](#problem)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Running it](#running-it)
+- [Example output](#example-output)
+- [CLI Reference](#cli-reference)
+- [Web Demo (Flask)](#web-demo-flask)
+- [Testing](#testing)
+- [Interview Talking Points](#interview-talking-points)
+- [Edge Cases Handled](#edge-cases-handled)
+- [Known Limitations](#known-limitations)
+- [Dependencies](#dependencies)
+- [Contributing](#contributing)
+
 ## Problem
 
 Given a set of tasks, each with a deadline, a profit, a resource cost, and
@@ -29,13 +45,16 @@ scheduler/
 └── engine.py                # Orchestrates all four stages
 
 main.py                    # CLI demo (argparse) over the scheduler package
-demo/                       # Flask web demo (isolated, imports scheduler only)
-api/, vercel.json           # Deployment-only shim so demo/ can be hosted on Vercel
+sample_tasks.json          # 10-task example plus an inert circular-dependency demo
+demo/app.py                # Flask web demo (isolated, imports scheduler only)
+api/index.py, vercel.json  # Deployment-only shim so demo/ can be hosted on Vercel
+tests/                     # pytest suite (unit, brute-force cross-checks, CLI and web demo)
 ```
 
 `demo/` and `api/` are demo layers on top of the core engine — they only
-*import* `scheduler`, never modify it, and none of the tests in `tests/`
-depend on them.
+*import* `scheduler`, never modify it. Only `tests/test_cli.py` and
+`tests/test_demo_app.py` exercise those layers; the other test files cover
+the engine alone.
 
 ### Pipeline (`engine.run_engine`)
 
@@ -51,13 +70,20 @@ depend on them.
 3. **Greedy scheduler** (`greedy_scheduler.py`, classic "Job Sequencing
    With Deadlines") picks the profit-maximizing subset of tasks that can
    each finish by their own deadline, ignoring resource cost entirely.
-   **Time: O(n log n + n·d)** where `d` = max deadline (slot search); the
-   `n log n` term is the profit sort.
+   **Time: O(n log n + n·d)** where `d` = `min(max deadline, n)` (slot
+   search; deadlines beyond `n` cannot matter because at most `n` tasks are
+   scheduled, so they are capped); the `n log n` term is the profit sort.
 4. **DP allocator** (`dp_allocator.py`, 0/1 knapsack) takes the greedy
    stage's output and picks the optimal sub-subset that fits the shared
-   resource budget. **Time: O(n · budget). Space: O(n · budget).**
+   resource budget. **Time: O(n · B). Space: O(n · B)** where `B` = `min(budget, total cost of
+   the tasks)` (a larger budget cannot change the answer).
 
 Total pipeline complexity: `O(V + E) + O(n log n) + O(n log n + n·d) + O(n · budget)`.
+
+## Prerequisites
+
+- Python 3 (tested with 3.13). The core `scheduler` package uses only the standard library.
+- `pip install -r requirements.txt` installs `pytest` and `flask` (the latter only for the web demo).
 
 ## Running it
 
@@ -66,6 +92,28 @@ pip install -r requirements.txt
 python main.py            # run the demo end-to-end
 python -m pytest tests/ -v  # run the test suite
 ```
+
+## Example output
+
+`python main.py` (built-in 7-task sample, budget 12):
+
+```text
+id                 name                  deadline  profit  selected
+-----------------  --------------------  --------  ------  --------
+requirements       Gather Requirements   1         40      no
+design             System Design         2         70      yes
+docs               Write Documentation   3         15      no
+backend            Build Backend         4         120     yes
+frontend           Build Frontend        4         90      yes
+integration_tests  Integration Tests     5         60      no
+deploy             Deploy to Production  6         150     no
+
+Total resource cost used: 12
+Total profit: 280
+```
+
+Note that `requirements` (a prerequisite of `design`) is not selected even
+though `design` is: see [Known Limitations](#known-limitations).
 
 ## CLI Reference
 
@@ -172,6 +220,26 @@ you change" answer to have ready.
 | Resource budget smaller than every task's cost | `knapsack_allocate` returns `([], 0.0)` — a valid, empty allocation, not an error |
 | Duplicate task ids | `ValueError` raised by `validate_unique_ids` / `run_engine` |
 
+## Known Limitations
+
+- **Dependencies are not enforced in the final selection.** The greedy and DP stages each
+  optimize their own constraint, so a selected task's prerequisites can be dropped (details in
+  the talking points above). `tests/test_engine.py` pins this behaviour.
+- Every task takes exactly one time slot; durations are not modelled.
+- `resource_cost` and the budget must be integers (the DP is indexed by budget).
+- The Flask demo caps requests at 500 tasks and a budget of 100,000; it has no authentication
+  or rate limiting.
+
+## Testing
+
+```bash
+python -m pytest -v
+```
+
+The suite checks the greedy scheduler and the knapsack against exhaustive brute-force search on
+random small inputs, plus topological ordering, cycle and unknown-dependency errors, input
+validation, the CLI (including bad input files) and the Flask endpoints.
+
 ## Dependencies
 
 The core `scheduler` package itself imports nothing beyond the standard
@@ -199,19 +267,41 @@ flask --app demo/app run          # http://127.0.0.1:5000
 # or: python demo/app.py
 ```
 
-**Live deployment:** the same app is deployed on Vercel via a thin
-`api/index.py` shim + `vercel.json` at the repo root (deployment plumbing
-only — it imports `demo/app.py`, nothing under `scheduler/` or `demo/`
-changes because of it). See the link at the top of this README, or deploy
-your own copy: `vercel --prod` from the repo root (Vercel auto-detects
-`api/index.py` as a Python serverless function).
+**Request format** (`POST /schedule`): `resource_budget` is an integer from 0 to
+100,000 (default 12); `tasks` is a list of at most 500 task objects (`id`, `name`,
+`deadline`, `profit`, `resource_cost`, optional `dependencies`). Invalid input,
+unknown or circular dependencies return HTTP 400 with `{"error": "..."}`.
+
+```bash
+curl -s -X POST http://127.0.0.1:5000/schedule -H "Content-Type: application/json" -d '{
+  "resource_budget": 6,
+  "tasks": [
+    {"id": "a", "name": "A", "deadline": 1, "profit": 10, "resource_cost": 4},
+    {"id": "b", "name": "B", "deadline": 2, "profit": 7,  "resource_cost": 3}
+  ]
+}'
+```
+
+The response includes `final_selected` (`["a"]` here), `total_profit`, `resource_used`,
+`topological_order`, `priority_order`, `greedy_selected` and a per-task `selected` flag.
+
+**Deployment:** `api/index.py` plus `vercel.json` at the repo root are a thin shim so
+the same app can be hosted on Vercel (`vercel --prod` from the repo root). The shim only
+imports `demo/app.py`. The deployment configuration has not been verified in this
+repository's test suite beyond importing the entry point.
+
+## Contributing
+
+1. Fork the repository and create a branch (`git checkout -b feature/my-change`).
+2. Add or update tests in `tests/` and run `python -m pytest`.
+3. Open a pull request describing the change and why it is needed.
 
 ## How to Demo This
 
 **Terminal (CLI):**
 
 ```bash
-python -m pytest tests/ -v                          # 1. show all 37 tests passing
+python -m pytest tests/ -v                          # 1. show the test suite passing
 python main.py --input sample_tasks.json --verbose  # 2. show the full pipeline on a 10-task project
 python main.py --demo-circular                      # 3. show error handling on a bad dependency graph
 ```
